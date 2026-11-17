@@ -1,0 +1,15 @@
+{
+  "table": "order_items",
+  "rows": 103606,
+  "partitions": 14,
+  "parquet_bytes": 854718,
+  "single_parquet_bytes": 468202,
+  "csv_bytes": 5619172,
+  "csv_to_parquet_ratio": 6.6,
+  "one_day_partition_pruned_ms": 1.39,
+  "one_day_single_parquet_ms": 0.56,
+  "one_day_csv_ms": 44.83,
+  "whole_table_parquet_ms": 2.18,
+  "pruning_speedup_vs_single_file": 0.4,
+  "parquet_speedup_vs_csv": 32.3
+}

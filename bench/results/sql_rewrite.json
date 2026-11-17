@@ -1,0 +1,38 @@
+{
+  "duckdb": {
+    "hours since the customer's previous order": {
+      "before_ms": 36.34,
+      "after_ms": 14.91,
+      "speedup": 2.4,
+      "rows": 41721,
+      "rows_identical": true
+    },
+    "each customer's largest order": {
+      "before_ms": 5.03,
+      "after_ms": 4.46,
+      "speedup": 1.1,
+      "rows": 2979,
+      "rows_identical": true
+    },
+    "running revenue by city": {
+      "before_ms": 1.72,
+      "after_ms": 1.29,
+      "speedup": 1.3,
+      "rows": 176,
+      "rows_identical": true
+    }
+  },
+  "sqlite": {
+    "rows": 41721,
+    "no_index": {
+      "correlated_s": 49.11,
+      "window_s": 0.05,
+      "speedup": 1029.4
+    },
+    "indexed": {
+      "correlated_s": 0.04,
+      "window_s": 0.03,
+      "speedup": 1.1
+    }
+  }
+}

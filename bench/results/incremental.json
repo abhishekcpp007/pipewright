@@ -1,0 +1,9 @@
+{
+  "runs": 3,
+  "incremental_seconds": 0.208,
+  "full_refresh_seconds": 1.531,
+  "incremental_rows_touched": 31979,
+  "full_refresh_rows_touched": 234045,
+  "speedup": 7.36,
+  "rows_ratio": 7.3
+}

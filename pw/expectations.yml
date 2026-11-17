@@ -1,0 +1,169 @@
+# What has to be true after each model is built. Anything with severity error stops the run at
+# that model and skips everything downstream of it.
+
+bronze_orders:
+  - name: bronze has rows for the batch
+    type: row_count_min
+    value: 1
+    severity: error
+
+silver_customers:
+  - name: one row per customer version
+    type: unique
+    columns: [version_key]
+    severity: error
+  - name: customer_id is never null
+    type: not_null
+    column: customer_id
+    severity: error
+  - name: tier is one of the three we know
+    type: accepted_values
+    column: tier
+    values: [basic, plus, gold]
+    severity: error
+  - name: city is filled in, unknown included
+    type: not_null
+    column: city
+    severity: error
+  - name: every email parses
+    type: custom_sql
+    sql: "SELECT COUNT(*) FROM {{ this }} WHERE NOT email_valid"
+    severity: warn
+    max_failures: 0
+
+silver_orders:
+  - name: one row per order
+    type: unique
+    columns: [order_id]
+    severity: error
+  - name: status is a state we model
+    type: accepted_values
+    column: status
+    values: [placed, paid, shipped, delivered, cancelled, refunded]
+    severity: error
+  - name: order_ts is not in the future
+    type: custom_sql
+    sql: "SELECT COUNT(*) FROM {{ this }} WHERE order_ts > now()"
+    severity: error
+  - name: volume did not collapse
+    type: volume_anomaly
+    tolerance_pct: 40
+    severity: warn
+
+silver_order_items:
+  - name: one row per item
+    type: unique
+    columns: [order_item_id]
+    severity: error
+  - name: quantity is positive
+    type: range
+    column: qty
+    min: 1
+    severity: error
+  - name: items waiting for an order stay rare
+    type: custom_sql
+    sql: "SELECT COUNT(*) FROM {{ this }} WHERE NOT order_known"
+    severity: warn
+    max_failures: 100
+
+silver_payments:
+  - name: one row per payment id
+    type: unique
+    columns: [payment_id]
+    severity: error
+  - name: amount is positive
+    type: range
+    column: amount_paise
+    min: 1
+    severity: error
+  - name: method is one we accept
+    type: accepted_values
+    column: method
+    values: [upi, card, netbanking, cod]
+    severity: error
+
+dim_customer:
+  - name: exactly one current row per customer
+    type: scd2_one_current
+    key: customer_id
+    severity: error
+  - name: validity windows do not overlap
+    type: scd2_no_overlap
+    key: customer_id
+    severity: error
+  - name: every customer has an open version
+    type: scd2_closed_history
+    key: customer_id
+    severity: error
+  - name: surrogate key is unique
+    type: unique
+    columns: [customer_sk]
+    severity: error
+
+dim_product:
+  - name: exactly one current row per product
+    type: scd2_one_current
+    key: product_id
+    severity: error
+  - name: validity windows do not overlap
+    type: scd2_no_overlap
+    key: product_id
+    severity: error
+  - name: surrogate key is unique
+    type: unique
+    columns: [product_sk]
+    severity: error
+
+fct_orders:
+  - name: one row per order
+    type: unique
+    columns: [order_id]
+    severity: error
+  - name: every fact row points at a customer that exists
+    type: relationship
+    column: customer_id
+    to: silver_orders
+    field: customer_id
+    severity: error
+  - name: gross is never negative
+    type: range
+    column: gross_paise
+    min: 0
+    severity: error
+  - name: paid never exceeds gross by more than a rupee of rounding
+    type: custom_sql
+    sql: "SELECT COUNT(*) FROM {{ this }} WHERE paid_paise > gross_paise + 100"
+    severity: warn
+    max_failures: 100
+  - name: point in time attribution mostly hits
+    type: custom_sql
+    sql: "SELECT COUNT(*) FROM {{ this }} WHERE attribution_fell_back"
+    severity: warn
+    max_failures: 500
+  - name: the fact is fresh
+    type: freshness
+    column: order_date
+    max_age_days: 2
+    severity: warn
+
+quarantine:
+  - name: one row per source row and reason
+    type: unique
+    columns: [quarantine_key]
+    severity: error
+  - name: the reasons are the ones we wrote
+    type: accepted_values
+    column: reason
+    values: [non_positive_qty, orphan_order_id, zero_amount, negative_amount, unparseable_email]
+    severity: error
+
+agg_daily_city_revenue:
+  - name: one row per day and city
+    type: unique
+    columns: [order_date, city]
+    severity: error
+  - name: no negative revenue
+    type: range
+    column: gross_paise
+    min: 0
+    severity: error

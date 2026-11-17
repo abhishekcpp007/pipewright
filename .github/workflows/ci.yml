@@ -1,0 +1,87 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check pw bench tests
+      - run: pytest -q
+      - name: build the warehouse the way the scheduler would, then check it
+        run: |
+          python -m pw.cli gen
+          python -m pw.cli replay
+          python -m pw.cli test
+          python - <<'PY'
+          import json, duckdb
+          con = duckdb.connect("data/warehouse/pw.duckdb", read_only=True)
+          injected = json.load(open("data/source/injected.json"))
+          q = lambda s: con.execute(s).fetchone()[0]
+
+          orders = q("SELECT COUNT(*) FROM silver_orders")
+          fact = q("SELECT COUNT(*) FROM fct_orders")
+          assert orders == fact == injected["row_counts"]["orders"], (orders, fact)
+
+          # The quarantine has to account for exactly the rows the generator broke.
+          by_reason = dict(con.execute(
+              "SELECT reason, COUNT(*) FROM quarantine GROUP BY 1").fetchall())
+          assert by_reason["non_positive_qty"] == injected["zero_qty_items"]
+          assert by_reason["negative_amount"] == injected["negative_payment_amounts"]
+          assert by_reason["unparseable_email"] == injected["bad_email_customers"]
+
+          # Every late arriving order is flagged, and nothing else is.
+          assert q("SELECT COUNT(*) FROM fct_orders WHERE is_late_arriving") == \
+              injected["late_arriving_orders"]
+
+          # The dimension kept history and it is well formed.
+          assert q("SELECT COUNT(*) FROM dim_customer WHERE version > 1") > 0
+          assert q("SELECT COUNT(*) FROM (SELECT customer_id FROM dim_customer "
+                   "WHERE is_current GROUP BY 1 HAVING COUNT(*) <> 1)") == 0
+
+          # The aggregate agrees with the fact it was built from.
+          assert q("SELECT SUM(gross_paise) FROM agg_daily_city_revenue") == \
+              q("SELECT SUM(gross_paise) FROM fct_orders WHERE is_revenue")
+          print("warehouse checks passed:", fact, "orders in the fact")
+          PY
+      - name: the same batch twice must not move a number
+        run: |
+          python - <<'PY'
+          import duckdb, subprocess
+          con = duckdb.connect("data/warehouse/pw.duckdb", read_only=True)
+          before = con.execute("SELECT * FROM agg_daily_city_revenue ORDER BY ALL").fetchall()
+          con.close()
+          subprocess.run(["python", "-m", "pw.cli", "run", "--date", "2026-10-14"], check=True)
+          con = duckdb.connect("data/warehouse/pw.duckdb", read_only=True)
+          after = con.execute("SELECT * FROM agg_daily_city_revenue ORDER BY ALL").fetchall()
+          assert before == after, "a repeat run changed the gold table"
+          print("idempotent over", len(after), "rows")
+          PY
+      - name: the quick benchmarks, so a change that breaks them fails here
+        run: |
+          python -m bench.incremental
+          python -m bench.sql_rewrite --quick
+          python -m bench.storage
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: lint and the suite inside the image, with no network at all
+        run: |
+          docker build --target test -t pipewright:test .
+          docker run --rm --network none pipewright:test ruff check pw bench tests
+          docker run --rm --network none pipewright:test pytest -q
+      - name: the shipped image builds its warehouse and reads it
+        run: |
+          docker build --target runtime -t pipewright:runtime .
+          docker run --rm pipewright:runtime report
+          docker run --rm pipewright:runtime state

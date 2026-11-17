@@ -1,0 +1,32 @@
+{
+  "source": {
+    "order_state_changes_in_source": 134652,
+    "distinct_order_states_in_source": 134652,
+    "orders_in_source": 41721
+  },
+  "runs": [
+    {
+      "mode": "cdc",
+      "rows_extracted": 278120,
+      "seconds": 5.4,
+      "order_versions_landed": 134665,
+      "distinct_order_states_seen": 134652,
+      "orders_in_fact": 41721,
+      "delivered_in_fact": 23009,
+      "revenue_rupees": 65601333.0
+    },
+    {
+      "mode": "poll",
+      "rows_extracted": 184419,
+      "seconds": 4.33,
+      "order_versions_landed": 41734,
+      "distinct_order_states_seen": 41721,
+      "orders_in_fact": 41721,
+      "delivered_in_fact": 23009,
+      "revenue_rupees": 65601333.0
+    }
+  ],
+  "poll_missed_states": 92931,
+  "poll_missed_pct": 69.0,
+  "revenue_gap_rupees": 0.0
+}
